@@ -1,5 +1,5 @@
+import os
 from gtts import gTTS
-from playsound import playsound
 from speechmatics.models import ConnectionSettings
 from speechmatics.batch_client import BatchClient
 from httpx import HTTPStatusError
@@ -42,10 +42,13 @@ LANGUAGES = {
     "uk": "ukrainian",
     "vi": "vietnamese",
 }
-# Function to translate and speak
+
+# Function to translate and create audio file
 def translate_and_speak(input_text, input_language, output_language):
-    # Set your Speechmatics API key
-    API_KEY = "zFxoWhVGjWGi8fMIzw0ZNF7fhng2v8zA"
+    # Get Speechmatics API key from environment variable
+    API_KEY = os.environ.get("SPEECHMATICS_API_KEY")
+    if not API_KEY:
+        raise ValueError("SPEECHMATICS_API_KEY environment variable not set!")
 
     # Perform transcription and translation using Speechmatics
     settings = ConnectionSettings(
@@ -71,34 +74,26 @@ def translate_and_speak(input_text, input_language, output_language):
                 content=input_text,
                 transcription_config=conf,
             )
-            print(f'Job {job_id} submitted successfully, waiting for transcript')
 
             # Wait for the transcription to complete
             transcript = client.wait_for_completion(job_id, transcription_format='json-v2')
 
-            for language in [output_language]:
-                # Print the translation for the selected output language from the JSON
-                print(f"Translation for {language}")
-                translation = ""
-                for translated_segment in transcript["translations"][language]:
-                    translation += translated_segment["content"] + " "
-                print(translation)
+            translation = ""
+            for translated_segment in transcript["translations"][output_language]:
+                translation += translated_segment["content"] + " "
 
-                # Create an audio file from the translated text
-                tts = gTTS(text=translation, lang=output_language)
-                tts.save("translated_audio.mp3")
+            # Create an audio file from the translated text
+            audio_file = "translated_audio.mp3"
+            tts = gTTS(text=translation, lang=output_language)
+            tts.save(audio_file)
 
-                # Play the translated audio
-                playsound("translated_audio.mp3")
-
-                # Return the translation result (Gradio requires a return value)
-                return translation
+            # Return the translation and the path to the audio file
+            return translation, audio_file
 
         except HTTPStatusError as e:
             if e.response.status_code == 401:
-                print('Invalid API key - Check your API_KEY at the top of the code!')
+                return 'Invalid API key - Check your SPEECHMATICS_API_KEY secret!', None
             elif e.response.status_code == 400:
-                print(e.response.json()['detail'])
+                return e.response.json()['detail'], None
             else:
                 raise e
-
